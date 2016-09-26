@@ -1,0 +1,6 @@
+[submodule "salt-cloud-store"]
+	path = docker/saltstore
+	url = git@github.com:Paulche/salt-cloud-store.git
+[submodule "salt/formula/docker-formula"]
+	path = salt/formula/docker-formula
+	url = https://github.com/saltstack-formulas/docker-formula.git
