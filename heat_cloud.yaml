@@ -1,0 +1,282 @@
+heat_template_version: 2014-10-16
+
+description: >
+  The sole purpose of this template is to provision SaltCloud infrastracture.
+  It's been tested on OpenStack Juno.
+
+parameters:
+  image:
+    type: string
+    description: Image for any node
+    # default: TestVM
+    default: ubuntu-xenial-server-cloudimg
+
+  flavor:
+    type: string
+    description: Flavor for any node
+    default: m1.small
+
+  key:
+    type: string
+    description: Key for any node
+    default: key0
+
+  public_net_id:
+    type: string
+    description: Public network
+    default: 095f43ed-65ba-48ce-8185-d4080e430a88
+
+  dns_server:
+    type: string
+    description: DNS server name
+    default: 172.18.208.44
+
+  salt_master_floating_id:
+    type: string
+    description: Floating IP for Salt master
+    default: b18561ef-884a-43e1-87c8-f6af0da1bfd3
+
+  salt_db_floating_id:
+    type: string
+    description: Floating IP for DB
+    default: c29a49d9-e201-4cd3-b541-17e1f00185ce
+
+  salt_front_floating_id:
+    type: string
+    description: Floating IP for Frontend
+    default: fad39c9e-f349-4451-bdd2-70a227986b91
+
+  salt_tank_floating_id:
+    type: string
+    description: Floating IP for Yandex Tank Machine
+    default: da7f8328-227e-44a2-9943-5061766a7811
+
+resources:
+  # Common
+  salt-network:
+    type: OS::Neutron::Net
+    properties:
+      name: salt-net
+
+  salt-network-subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network: { get_resource: salt-network }
+      cidr: 172.17.0.0/27
+      gateway_ip: 172.17.0.1
+      dns_nameservers:
+        - { get_param: dns_server }
+
+      allocation_pools:
+        - start: 172.17.0.2
+          end: 172.17.0.30
+
+  salt-network-router:
+    type: OS::Neutron::Router
+    properties:
+      external_gateway_info:
+        network: { get_param: public_net_id }
+
+  salt-network-router-interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: salt-network-router }
+      subnet_id: { get_resource: salt-network-subnet }
+
+  #
+  # Salt master
+  #
+  salt-master-security-group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      # description: Add security group rules for server
+      name: salt-master-sec-group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+
+        # SaltStack Master
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 4505
+          port_range_max: 4506
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+
+  salt-master-instance:
+    type: OS::Nova::Server
+    properties:
+      name: SaltMaster
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: salt-master-port }
+      user_data: |
+        #!/bin/sh
+        echo 'set modeline' > /home/ubuntu/.vimrc
+        wget -O - https://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
+        echo 'deb http://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest xenial main' > /etc/apt/sources.list.d/saltstack.list
+        apt-get update
+        apt-get install -y salt-master salt-minion salt-ssh salt-syndic salt-cloud salt-api
+
+        echo 'master: master.salt.eu.mcloud.chechetin.net' > /etc/salt/minion.d/global.conf
+        echo 'auto_accept: True' >> /etc/salt/master.d/global.conf
+        echo 'failhard: False' >> /etc/salt/master.d/global.conf
+
+        service salt-master restart
+        sleep 5
+        service salt-minion restart
+
+      user_data_format: RAW
+
+  salt-master-port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: salt-network }
+      fixed_ips:
+        - subnet: { get_resource: salt-network-subnet }
+      security_groups:
+        - { get_resource: salt-master-security-group }
+
+  salt-master-association:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_param: salt_master_floating_id }
+      port_id: { get_resource: salt-master-port}
+
+  #
+  # DB
+  #
+  salt-db-security-group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      # description: Add security group rules for server
+      name: salt-db-sec-group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+
+        # Postgres
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 5432
+          port_range_max: 5432
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+
+  salt-db-instance:
+    type: OS::Nova::Server
+    properties:
+      name: SaltDB
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: salt-db-port }
+      user_data: |
+        #!/bin/sh
+        echo 'set modeline' > /home/ubuntu/.vimrc
+        wget -O - https://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
+        echo 'deb http://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest xenial main' > /etc/apt/sources.list.d/saltstack.list
+        apt-get update
+        apt-get install -y salt-minion
+        sed -i -e 's/\#master:.*$/master: master.salt.eu.mcloud.chechetin.net/g'   /etc/salt/minion
+
+        sleep 30
+        service salt-minion restart
+
+      user_data_format: RAW
+
+  salt-db-port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: salt-network }
+      fixed_ips:
+        - subnet: { get_resource: salt-network-subnet }
+      security_groups:
+        - { get_resource: salt-db-security-group }
+
+  salt-db-association:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_param: salt_db_floating_id }
+      port_id: { get_resource: salt-db-port}
+
+  #
+  # Front
+  #
+  salt-front-security-group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      # description: Add security group rules for server
+      name: salt-front-sec-group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+
+        # HTTP & HTTPS
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 443
+          port_range_max: 443
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+
+  salt-front-instance:
+    type: OS::Nova::Server
+    properties:
+      name: SaltFront
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: salt-front-port }
+      user_data: |
+        #!/bin/sh
+        echo 'set modeline' > /home/ubuntu/.vimrc
+        wget -O - https://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
+        echo 'deb http://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest xenial main' > /etc/apt/sources.list.d/saltstack.list
+        apt-get update
+        apt-get install -y salt-minion
+        sed -i -e 's/\#master:.*$/master: master.salt.eu.mcloud.chechetin.net/g'   /etc/salt/minion
+
+        sleep 30
+        service salt-minion restart
+
+      user_data_format: RAW
+
+  salt-front-port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: salt-network }
+      fixed_ips:
+        - subnet: { get_resource: salt-network-subnet }
+      security_groups:
+        - { get_resource: salt-front-security-group }
+
+  salt-front-association:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_param: salt_front_floating_id }
+      port_id: { get_resource: salt-front-port}
+
+# outputs:
+#   salt-master-private-ip:
+#     description: IP address of salt-master in private network
+#     value: { get_attr: [salt-master-instance, first_address] }
+#
