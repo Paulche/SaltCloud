@@ -19,7 +19,7 @@ parameters:
   key:
     type: string
     description: Key for any node
-    default: key0
+    default: salt_cloud
 
   public_net_id:
     type: string
@@ -50,6 +50,11 @@ parameters:
     type: string
     description: Floating IP for Yandex Tank Machine
     default: da7f8328-227e-44a2-9943-5061766a7811
+
+  params.salt.root:
+    type: string
+    description: Path to SaltStack configuration DB
+    default: /home/ubuntu/SaltCloud
 
 resources:
   # Common
@@ -84,6 +89,89 @@ resources:
       subnet_id: { get_resource: salt-network-subnet }
 
   #
+  # *** Cloud init configuration
+  #
+  cloud_config.common:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        write_files:
+          - path: /home/ubuntu/.vimrc
+            content: 'set modeline'
+          - path: /etc/apt/sources.list.d/saltstack.list
+            content: 'deb http://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest xenial main'
+        runcmd:
+          - 'wget -O - https://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -'
+          - 'apt-get update'
+
+
+  cloud_config.salt.master:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        runcmd:
+          - 'apt-get install -y git salt-master salt-minion salt-ssh salt-syndic salt-cloud salt-api'
+          - str_replace:
+              template: 'git clone https://github.com/Paulche/SaltCloud.git $salt_root'
+              params:
+                $salt_root: { get_param: params.salt.root }
+          - str_replace:
+              template: 'cd $salt_root && git submodule update --init --recursive'
+              params:
+                $salt_root: { get_param: params.salt.root }
+
+        write_files:
+          - path: '/etc/salt/master.d/global.conf'
+            content:
+              str_replace:
+                template: |
+                  auto_accept: True
+                  failhard: True
+
+                  file_roots:
+                    base:
+                      - $salt_root/salt/state
+                      - $salt_root/salt/formula
+                  pillar_roots:
+                    base:
+                      - $salt_root/salt/pillar
+                params:
+                  $salt_root: { get_param: params.salt.root }
+
+  cloud_config.salt.master.restart:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        runcmd:
+          - 'service salt-master restart'
+
+  cloud_config.salt.minion:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        runcmd:
+          - 'apt-get install -y salt-minion'
+        write_files:
+          - path: '/etc/salt/minion.d/global.conf'
+            content: 'master: master.salt.eu.mcloud.chechetin.net'
+
+  cloud_config.salt.minion.restart:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        runcmd:
+          - |
+              until salt-call -t1 --retcode-passthrough status.ping_master master.salt.eu.mcloud.chechetin.net; do
+                sleep 5
+
+                service salt-minion restart
+              done
+  #
   # Salt master
   #
   salt-master-security-group:
@@ -106,7 +194,7 @@ resources:
         - remote_ip_prefix: 0.0.0.0/0
           protocol: icmp
 
-  salt-master-instance:
+  instance.master:
     type: OS::Nova::Server
     properties:
       name: SaltMaster
@@ -115,23 +203,28 @@ resources:
       key_name: { get_param: key }
       networks:
         - port: { get_resource: salt-master-port }
-      user_data: |
-        #!/bin/sh
-        echo 'set modeline' > /home/ubuntu/.vimrc
-        wget -O - https://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
-        echo 'deb http://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest xenial main' > /etc/apt/sources.list.d/saltstack.list
-        apt-get update
-        apt-get install -y salt-master salt-minion salt-ssh salt-syndic salt-cloud salt-api
-
-        echo 'master: master.salt.eu.mcloud.chechetin.net' > /etc/salt/minion.d/global.conf
-        echo 'auto_accept: True' >> /etc/salt/master.d/global.conf
-        echo 'failhard: False' >> /etc/salt/master.d/global.conf
-
-        service salt-master restart
-        sleep 5
-        service salt-minion restart
-
       user_data_format: RAW
+      user_data: { get_resource: cloud_config.aggr.master }
+
+  cloud_config.hostname.master:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        hostname: master
+        fqdn: master.salt.eu.mcloud.chechetin.net
+        manage_etc_hosts: true
+
+  cloud_config.aggr.master:
+      type: OS::Heat::MultipartMime
+      properties:
+        parts:
+          - config: { get_resource: cloud_config.hostname.master }
+          - config: { get_resource: cloud_config.common }
+          - config: { get_resource: cloud_config.salt.master }
+          - config: { get_resource: cloud_config.salt.master.restart }
+          - config: { get_resource: cloud_config.salt.minion }
+          - config: { get_resource: cloud_config.salt.minion.restart }
 
   salt-master-port:
     type: OS::Neutron::Port
@@ -171,8 +264,9 @@ resources:
         - remote_ip_prefix: 0.0.0.0/0
           protocol: icmp
 
-  salt-db-instance:
+  instance.db:
     type: OS::Nova::Server
+    depends_on: instance.master
     properties:
       name: SaltDB
       image: { get_param: image }
@@ -180,19 +274,26 @@ resources:
       key_name: { get_param: key }
       networks:
         - port: { get_resource: salt-db-port }
-      user_data: |
-        #!/bin/sh
-        echo 'set modeline' > /home/ubuntu/.vimrc
-        wget -O - https://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
-        echo 'deb http://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest xenial main' > /etc/apt/sources.list.d/saltstack.list
-        apt-get update
-        apt-get install -y salt-minion
-        sed -i -e 's/\#master:.*$/master: master.salt.eu.mcloud.chechetin.net/g'   /etc/salt/minion
-
-        sleep 30
-        service salt-minion restart
-
       user_data_format: RAW
+      user_data: { get_resource: cloud_config.aggr.db }
+
+  cloud_config.hostname.db:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        hostname: db
+        fqdn: db.salt.eu.mcloud.chechetin.net
+        manage_etc_hosts: true
+
+  cloud_config.aggr.db:
+      type: OS::Heat::MultipartMime
+      properties:
+        parts:
+          - config: { get_resource: cloud_config.hostname.db }
+          - config: { get_resource: cloud_config.common }
+          - config: { get_resource: cloud_config.salt.minion }
+          - config: { get_resource: cloud_config.salt.minion.restart }
 
   salt-db-port:
     type: OS::Neutron::Port
@@ -237,8 +338,9 @@ resources:
         - remote_ip_prefix: 0.0.0.0/0
           protocol: icmp
 
-  salt-front-instance:
+  instance.front:
     type: OS::Nova::Server
+    depends_on: instance.master
     properties:
       name: SaltFront
       image: { get_param: image }
@@ -246,19 +348,27 @@ resources:
       key_name: { get_param: key }
       networks:
         - port: { get_resource: salt-front-port }
-      user_data: |
-        #!/bin/sh
-        echo 'set modeline' > /home/ubuntu/.vimrc
-        wget -O - https://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
-        echo 'deb http://repo.saltstack.com/apt/ubuntu/16.04/amd64/latest xenial main' > /etc/apt/sources.list.d/saltstack.list
-        apt-get update
-        apt-get install -y salt-minion
-        sed -i -e 's/\#master:.*$/master: master.salt.eu.mcloud.chechetin.net/g'   /etc/salt/minion
-
-        sleep 30
-        service salt-minion restart
-
       user_data_format: RAW
+      user_data: { get_resource: cloud_config.aggr.front }
+
+  cloud_config.hostname.front:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        hostname: front
+        fqdn: front.salt.eu.mcloud.chechetin.net
+        manage_etc_hosts: true
+
+  cloud_config.aggr.front:
+      type: OS::Heat::MultipartMime
+      properties:
+        parts:
+          - config: { get_resource: cloud_config.hostname.front }
+          - config: { get_resource: cloud_config.common }
+          - config: { get_resource: cloud_config.salt.minion }
+          - config: { get_resource: cloud_config.salt.minion.restart }
+
 
   salt-front-port:
     type: OS::Neutron::Port
@@ -274,9 +384,70 @@ resources:
     properties:
       floatingip_id: { get_param: salt_front_floating_id }
       port_id: { get_resource: salt-front-port}
+  #
+  # Tank
+  #
+  salt-tank-security-group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      # description: Add security group rules for server
+      name: salt-tank-sec-group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+
+  instance.tank:
+    type: OS::Nova::Server
+    depends_on: instance.master
+    properties:
+      name: SaltTank
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: salt-tank-port }
+      user_data_format: RAW
+      user_data: { get_resource: cloud_config.aggr.tank }
+
+  cloud_config.hostname.tank:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        hostname: tank
+        fqdn: tank.salt.eu.mcloud.chechetin.net
+        manage_etc_hosts: true
+
+  cloud_config.aggr.tank:
+      type: OS::Heat::MultipartMime
+      properties:
+        parts:
+          - config: { get_resource: cloud_config.hostname.tank }
+          - config: { get_resource: cloud_config.common }
+          - config: { get_resource: cloud_config.salt.minion }
+          - config: { get_resource: cloud_config.salt.minion.restart }
+
+  salt-tank-port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: salt-network }
+      fixed_ips:
+        - subnet: { get_resource: salt-network-subnet }
+      security_groups:
+        - { get_resource: salt-front-security-group }
+
+  salt-tank-association:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_param: salt_tank_floating_id }
+      port_id: { get_resource: salt-tank-port}
 
 # outputs:
 #   salt-master-private-ip:
 #     description: IP address of salt-master in private network
-#     value: { get_attr: [salt-master-instance, first_address] }
-#
+#     value: { get_attr: [instance.master, first_address] }
