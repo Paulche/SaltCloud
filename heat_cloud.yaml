@@ -129,7 +129,8 @@ resources:
                 template: |
                   auto_accept: True
                   failhard: True
-                  transport: raet
+                  # Enable when it's time
+                  # transport: raet
 
                   file_roots:
                     base:
@@ -160,7 +161,8 @@ resources:
           - path: '/etc/salt/minion.d/global.conf'
             content: |
               master: master.salt.eu.mcloud.chechetin.net
-              transport: raet
+              # Enable when it's time
+              # transport: raet
 
   cloud_config.salt.minion.restart:
     type: OS::Heat::CloudConfig
@@ -169,9 +171,7 @@ resources:
         merge_how: 'dict(recurse_array,no_replace)+list(append)'
         runcmd:
           - |
-              until salt-call -t1 --retcode-passthrough status.ping_master master.salt.eu.mcloud.chechetin.net; do
-                sleep 5
-
+              until salt-call --retcode-passthrough status.ping_master master.salt.eu.mcloud.chechetin.net; do
                 service salt-minion restart
               done
   #
