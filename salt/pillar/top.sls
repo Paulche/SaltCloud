@@ -3,7 +3,7 @@ base:
   '*':
     - global
 
-  'saltfront':
+  'front*':
     - saltfront
 
 

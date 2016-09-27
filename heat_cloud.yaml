@@ -135,7 +135,7 @@ resources:
                   file_roots:
                     base:
                       - $salt_root/salt/state
-                      - $salt_root/salt/formula
+                      - $salt_root/salt/docker-formula
                   pillar_roots:
                     base:
                       - $salt_root/salt/pillar
@@ -192,12 +192,12 @@ resources:
         - remote_ip_prefix: 0.0.0.0/0
           protocol: tcp
           port_range_min: 4505
-          port_range_max: 4505
+          port_range_max: 4506
 
         # SaltStack Master RAET UDP
         - remote_ip_prefix: 0.0.0.0/0
           protocol: udp
-          port_range_min: 4506
+          port_range_min: 4505
           port_range_max: 4506
 
         - remote_ip_prefix: 0.0.0.0/0

@@ -4,8 +4,8 @@ postgresql-9.4:
   pkg:
     - installed
     - refresh: True
-  require:
-    - pkgrepo: postgresql
+    require:
+      - pkgrepo: postgresql
 
 postgresql:
   pkgrepo.managed:
@@ -17,9 +17,8 @@ postgresql:
 gitlab_db:
   postgres_database.present:
     - name: gitlab
-  require:
-    - pkg: postgresql-9.4
- 
+    require:
+      - pkg: postgresql-9.4
 gitlab_user:
   postgres_user.present:
     - name: gitlab
@@ -28,8 +27,8 @@ gitlab_user:
     - password: {{ pillar.get('db_password') }}
     # - inherit: True
     - refresh_password: True
-  require:
-    - pkg: postgresql-9.4
+    require:
+      - pkg: postgresql-9.4
 
 gitlab_priv:
   postgres_privileges.present:
@@ -42,13 +41,10 @@ gitlab_priv:
     # - prepend: public
     # - maintenance_db: testdb
 
-  require:
-    - pkg: postgresql-9.4
-    - postgres_user: gitlab_user
-    - postgres_database: gitlab_db
-      
-
-    
+    require:
+      - pkg: postgresql-9.4
+      - postgres_user: gitlab_user
+      - postgres_database: gitlab_db
 
 
 

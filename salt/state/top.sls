@@ -4,10 +4,10 @@ base:
   '*':
     - baseos
 
-  'saltfront':
+  'front*':
     - docker
     - docker.containers
 
-  'saltdb':
+  'db*':
     - db
 
