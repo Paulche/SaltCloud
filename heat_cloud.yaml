@@ -112,7 +112,7 @@ resources:
       cloud_config:
         merge_how: 'dict(recurse_array,no_replace)+list(append)'
         runcmd:
-          - 'apt-get install -y git salt-master salt-minion salt-ssh salt-syndic salt-cloud salt-api'
+          - 'apt-get install -y git salt-master salt-minion salt-ssh salt-syndic salt-cloud salt-api python-raet'
           - str_replace:
               template: 'git clone https://github.com/Paulche/SaltCloud.git $salt_root'
               params:
@@ -129,6 +129,7 @@ resources:
                 template: |
                   auto_accept: True
                   failhard: True
+                  transport: raet
 
                   file_roots:
                     base:
@@ -154,10 +155,12 @@ resources:
       cloud_config:
         merge_how: 'dict(recurse_array,no_replace)+list(append)'
         runcmd:
-          - 'apt-get install -y salt-minion'
+          - 'apt-get install -y salt-minion python-raet'
         write_files:
           - path: '/etc/salt/minion.d/global.conf'
-            content: 'master: master.salt.eu.mcloud.chechetin.net'
+            content: |
+              master: master.salt.eu.mcloud.chechetin.net
+              transport: raet
 
   cloud_config.salt.minion.restart:
     type: OS::Heat::CloudConfig
@@ -185,10 +188,16 @@ resources:
           port_range_min: 22
           port_range_max: 22
 
-        # SaltStack Master
+        # SaltStack Master ZeroMQ TCP
         - remote_ip_prefix: 0.0.0.0/0
           protocol: tcp
           port_range_min: 4505
+          port_range_max: 4505
+
+        # SaltStack Master RAET UDP
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: udp
+          port_range_min: 4506
           port_range_max: 4506
 
         - remote_ip_prefix: 0.0.0.0/0
