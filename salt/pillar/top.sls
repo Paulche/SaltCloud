@@ -6,4 +6,7 @@ base:
   'front*':
     - saltfront
 
+  'tank*':
+    - tank
+
 
