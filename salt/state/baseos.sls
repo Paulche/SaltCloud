@@ -21,14 +21,9 @@ tank_pub:
   file.managed:
     - user: root
     - group: root
-    - mode: 700
     - contents: |
       Host *
         StrictHostKeyChecking no
         UserKnownHostsFile /dev/null
-
-
-
-
-
+    - mode: 700
 
