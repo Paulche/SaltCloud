@@ -5,7 +5,7 @@ sysstat:
     - installed
 
 tank_pub:
-  ssh_auth:
+  ssh_auth.present:
     - user: root
     - enc: ssh-rsa
     - source: salt://files/tank.pub
