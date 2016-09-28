@@ -14,14 +14,12 @@ postgresql:
       - key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
 
 
-gitlab_db:
+spree:
   postgres_database.present:
     - require:
       - pkg: postgresql-9.4
 
-gitlab_user:
   postgres_user.present:
-    - name: gitlab
     - encrypted: True
     - login: True
     - password: {{ pillar.get('db_password') }}
@@ -30,10 +28,8 @@ gitlab_user:
     - require:
       - pkg: postgresql-9.4
 
-gitlab_priv:
   postgres_privileges.present:
-    - name: gitlab
-    - object_name: gitlab
+    - object_name: spree
     - object_type: database
     - privileges:
       - ALL
@@ -43,8 +39,8 @@ gitlab_priv:
 
     - require:
       - pkg: postgresql-9.4
-      - postgres_user: gitlab_user
-      - postgres_database: gitlab_db
+      - postgres_user: spree
+      - postgres_database: spree
 
 
 
