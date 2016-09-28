@@ -22,8 +22,8 @@ tank_pub:
     - user: root
     - group: root
     - contents: |
-      Host *
-        StrictHostKeyChecking no
-        UserKnownHostsFile /dev/null
+        Host *
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
     - mode: 700
 
