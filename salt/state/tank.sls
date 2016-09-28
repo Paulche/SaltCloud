@@ -14,7 +14,7 @@ include:
 {% endfor %}
 
 direvius/yandex-tank:
-  dockerng.image_present:
+  dockerng.image_present: []
 
 
 # - '-v /opt/yandextest/loadtest:/var/loadtest'
