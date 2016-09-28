@@ -4,8 +4,7 @@ base:
     - baseos
 
   'front*':
-    - docker
-    - docker.containers
+    - front
 
   'db*':
     - db
