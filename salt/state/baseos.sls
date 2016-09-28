@@ -1,8 +1,10 @@
 # vim: set ts=2 sw=2 sts=2 expandtab ai:
 ---
-sysstat:
-  pkg:
-    - installed
+base-pkgs:
+  pkg.installed:
+    - names:
+      - sysstat
+      - iperf
 
 tank_pub:
   ssh_auth.present:
