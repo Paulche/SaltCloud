@@ -16,9 +16,9 @@ postgresql:
 
 gitlab_db:
   postgres_database.present:
-    - name: gitlab
     - require:
       - pkg: postgresql-9.4
+
 gitlab_user:
   postgres_user.present:
     - name: gitlab

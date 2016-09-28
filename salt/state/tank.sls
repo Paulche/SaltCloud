@@ -3,21 +3,22 @@
 include:
   - docker
 
-{% for dir in ['loadtest','ssh'] %}
-/opt/yandextest/{{ dir }}:
+/opt/yandextank/loadtest:
   file.directory:
     - user: root
     - group: root
     - makedirs: True
-    - require_in:
-      - dockerng: direvius/yandex-tank
-{% endfor %}
 
-direvius/yandex-tank:
-  dockerng.image_absent: []
+  mount.mounted:
+    - device: /dev/vdb
+    - fstype: btrfs
+    - require:
+      - file: /opt/yandextank/loadtest
 
 pchechetin/yandex-tank:
-  dockerng.image_present: []
+  dockerng.image_present:
+    - require:
+      - mount: /opt/yandextank/loadtest
 
 # - '-v /opt/yandextest/loadtest:/var/loadtest'
 # - '-v /opt/yandextest/ssh:/home/yandextank/.ssh'
