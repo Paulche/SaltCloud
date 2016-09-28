@@ -12,4 +12,4 @@ include:
     - makedirs: True
     - require_in:
       - service: docker-container-service-yandextank
-{% end %}
+{% endfor %}
