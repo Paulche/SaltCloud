@@ -2,7 +2,6 @@
 
 include:
   - docker
-  - docker.containers
 
 {% for dir in ['loadtest','ssh'] %}
 /opt/yandextest/{{ dir }}:
@@ -11,5 +10,13 @@ include:
     - group: root
     - makedirs: True
     - require_in:
-      - service: docker-container-service-yandextank
+      - dockerng: direvius/yandex-tank
 {% endfor %}
+
+direvius/yandex-tank:
+  dockerng.image_present:
+
+
+# - '-v /opt/yandextest/loadtest:/var/loadtest'
+# - '-v /opt/yandextest/ssh:/home/yandextank/.ssh'
+
