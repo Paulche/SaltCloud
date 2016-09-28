@@ -5,4 +5,5 @@ docker-containers:
       runoptions:
         # - "-e RAILS_ENV=production"
         # - "-e DATABASE_URL=postgresql://localhost/blog_development?pool=5"
-        - "-p 80:80"
+          - "-e SECRET_KEY_BASE=c82ee129fb69cd47120ae477839f11c04ae3608b2224c2e7d4c53e44bae54878fb1bc9df2be7365a97d5dcaa778d4b6a2cb44ede0d4a69165db02db251b2b141"
+          - "-p 80:80"

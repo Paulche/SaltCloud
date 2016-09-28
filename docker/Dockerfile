@@ -5,7 +5,7 @@ COPY saltstore /home/saltstore
 
 WORKDIR /home/saltstore
 
-ENV RAILS_ENV=production
+# ENV RAILS_ENV=production
 
 RUN bundle install
 
