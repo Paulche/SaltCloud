@@ -4,3 +4,6 @@
 [submodule "salt/formula/docker-formula"]
 	path = salt/formula/docker-formula
 	url = https://github.com/saltstack-formulas/docker-formula.git
+[submodule "salt/formula/haproxy-formula"]
+	path = salt/formula/haproxy-formula
+	url = https://github.com/saltstack-formulas/haproxy-formula.git

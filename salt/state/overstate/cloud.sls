@@ -3,13 +3,13 @@ baseos:
     - tgt: '*'
     - sls: baseos
 
-front:
+lb:
   salt.state:
-    - tgt: 'front*'
-    - sls: front
+    - tgt: 'lb*'
+    - sls: lb
     - require:
       - salt: baseos
-      - salt: db
+      - salt: web
 
 db:
   salt.state:
@@ -22,6 +22,22 @@ tank:
   salt.state:
     - tgt: 'tank*'
     - sls: tank
+    - require:
+      - salt: baseos
+
+
+web:
+  salt.state:
+    - tgt: 'web*'
+    - sls: web
+    - require:
+      - salt: baseos
+      - salg: db
+
+alert:
+  salt.state:
+    - tgt: 'alert*'
+    - sls: alert
     - require:
       - salt: baseos
 

@@ -161,6 +161,7 @@ resources:
                     base:
                       - $salt_root/salt/state
                       - $salt_root/salt/docker-formula
+                      - $salt_root/salt/haproxy-formula
                   pillar_roots:
                     base:
                       - $salt_root/salt/pillar
