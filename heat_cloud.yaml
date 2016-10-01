@@ -11,10 +11,15 @@ parameters:
     # default: TestVM
     default: ubuntu-xenial-server-cloudimg
 
-  flavor:
+  flavor.default:
     type: string
     description: Flavor for any node
     default: m1.small
+
+  flavor.web:
+    type: string
+    description: Flavor for HTTP node
+    default: m1.medium
 
   key:
     type: string
@@ -31,30 +36,50 @@ parameters:
     description: DNS server name
     default: 172.18.208.44
 
-  salt_master_floating_id:
+  network.floating.master:
     type: string
     description: Floating IP for Salt master
     default: b18561ef-884a-43e1-87c8-f6af0da1bfd3
 
-  salt_db_floating_id:
+  network.floating.db:
     type: string
     description: Floating IP for DB
     default: c29a49d9-e201-4cd3-b541-17e1f00185ce
 
-  salt_front_floating_id:
+  network.floating.lb:
     type: string
-    description: Floating IP for Frontend
+    description: Floating IP for Load Balancer
     default: fad39c9e-f349-4451-bdd2-70a227986b91
 
-  salt_tank_floating_id:
+  network.floating.tank:
     type: string
     description: Floating IP for Yandex Tank Machine
     default: da7f8328-227e-44a2-9943-5061766a7811
+
+  network.floating.web0:
+    type: string
+    description: Floating IP for Web Backend #0
+    default: f719d6fd-e5a5-4dcd-bcd9-4ea1c6fdf631
+
+  network.floating.web1:
+    type: string
+    description: Floating IP for Web Backend #1
+    default: 228b751b-1149-4549-a7b1-b11f9ebf33c8
+
+  network.floating.alert:
+    type: string
+    description: Floating IP for Alerting/Monitoring Machine
+    default: 4b0ec5cc-ae46-4b26-88c6-7dd5f488dd50
 
   params.salt.root:
     type: string
     description: Path to SaltStack configuration DB
     default: /home/ubuntu/SaltCloud
+
+  volume.tank.id:
+    type: string
+    description: Volume with yandex-tank perf logs
+    default: d90c57fb-1989-4a03-9951-4857d343234b
 
 resources:
   # Common
@@ -208,7 +233,7 @@ resources:
     properties:
       name: SaltMaster
       image: { get_param: image }
-      flavor: { get_param: flavor }
+      flavor: { get_param: flavor.default }
       key_name: { get_param: key }
       networks:
         - port: { get_resource: salt-master-port }
@@ -247,7 +272,7 @@ resources:
   salt-master-association:
     type: OS::Neutron::FloatingIPAssociation
     properties:
-      floatingip_id: { get_param: salt_master_floating_id }
+      floatingip_id: { get_param: network.floating.master }
       port_id: { get_resource: salt-master-port}
 
   #
@@ -279,7 +304,7 @@ resources:
     properties:
       name: SaltDB
       image: { get_param: image }
-      flavor: { get_param: flavor }
+      flavor: { get_param: flavor.default }
       key_name: { get_param: key }
       networks:
         - port: { get_resource: salt-db-port }
@@ -316,17 +341,17 @@ resources:
   salt-db-association:
     type: OS::Neutron::FloatingIPAssociation
     properties:
-      floatingip_id: { get_param: salt_db_floating_id }
+      floatingip_id: { get_param: network.floating.db }
       port_id: { get_resource: salt-db-port}
 
   #
   # Front
   #
-  salt-front-security-group:
+  network.secgroup.lb:
     type: OS::Neutron::SecurityGroup
     properties:
       # description: Add security group rules for server
-      name: salt-front-sec-group
+      name: salt.lb
       rules:
         - remote_ip_prefix: 0.0.0.0/0
           protocol: tcp
@@ -347,52 +372,178 @@ resources:
         - remote_ip_prefix: 0.0.0.0/0
           protocol: icmp
 
-  instance.front:
+  instance.lb:
     type: OS::Nova::Server
     depends_on: instance.master
     properties:
-      name: SaltFront
+      name: SaltLB
       image: { get_param: image }
-      flavor: { get_param: flavor }
+      flavor: { get_param: flavor.default }
       key_name: { get_param: key }
       networks:
-        - port: { get_resource: salt-front-port }
+        - port: { get_resource: network.port.lb }
       user_data_format: RAW
-      user_data: { get_resource: cloud_config.aggr.front }
+      user_data: { get_resource: cloud_config.aggr.lb }
 
-  cloud_config.hostname.front:
+  cloud_config.hostname.lb:
     type: OS::Heat::CloudConfig
     properties:
       cloud_config:
         merge_how: 'dict(recurse_array,no_replace)+list(append)'
-        hostname: front
-        fqdn: front.salt.eu.mcloud.chechetin.net
+        hostname: lb
+        fqdn: lb.salt.eu.mcloud.chechetin.net
         manage_etc_hosts: true
 
-  cloud_config.aggr.front:
+  cloud_config.aggr.lb:
       type: OS::Heat::MultipartMime
       properties:
         parts:
-          - config: { get_resource: cloud_config.hostname.front }
+          - config: { get_resource: cloud_config.hostname.lb }
           - config: { get_resource: cloud_config.common }
           - config: { get_resource: cloud_config.salt.minion }
           - config: { get_resource: cloud_config.salt.minion.restart }
 
 
-  salt-front-port:
+  network.port.lb:
     type: OS::Neutron::Port
     properties:
       network: { get_resource: salt-network }
       fixed_ips:
         - subnet: { get_resource: salt-network-subnet }
       security_groups:
-        - { get_resource: salt-front-security-group }
+        - { get_resource: network.secgroup.lb }
 
-  salt-front-association:
+  network.floating.map.lb:
     type: OS::Neutron::FloatingIPAssociation
     properties:
-      floatingip_id: { get_param: salt_front_floating_id }
-      port_id: { get_resource: salt-front-port}
+      floatingip_id: { get_param: network.floating.lb }
+      port_id: { get_resource: network.port.lb }
+
+  network.secgroup.web:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      # description: Add security group rules for server
+      name: salt.web
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+
+        # HTTP & HTTPS
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 443
+          port_range_max: 443
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+
+  #
+  # Web0
+  #
+  instance.web0:
+    type: OS::Nova::Server
+    depends_on: instance.master
+    properties:
+      name: SaltWeb0
+      image: { get_param: image }
+      flavor: { get_param: flavor.web }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: network.port.web0 }
+      user_data_format: RAW
+      user_data: { get_resource: cloud_config.aggr.web0 }
+
+  cloud_config.hostname.web0:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        hostname: web0
+        fqdn: web0.salt.eu.mcloud.chechetin.net
+        manage_etc_hosts: true
+
+  cloud_config.aggr.web0:
+      type: OS::Heat::MultipartMime
+      properties:
+        parts:
+          - config: { get_resource: cloud_config.hostname.web0 }
+          - config: { get_resource: cloud_config.common }
+          - config: { get_resource: cloud_config.salt.minion }
+          - config: { get_resource: cloud_config.salt.minion.restart }
+
+
+  network.port.web0:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: salt-network }
+      fixed_ips:
+        - subnet: { get_resource: salt-network-subnet }
+      security_groups:
+        - { get_resource: network.secgroup.web }
+
+  network.floating.map.web0:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_param: network.floating.web0 }
+      port_id: { get_resource: network.port.web0 }
+
+  #
+  # Web1
+  #
+  instance.web1:
+    type: OS::Nova::Server
+    depends_on: instance.master
+    properties:
+      name: SaltWeb1
+      image: { get_param: image }
+      flavor: { get_param: flavor.web }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: network.port.web1 }
+      user_data_format: RAW
+      user_data: { get_resource: cloud_config.aggr.web1 }
+
+  cloud_config.hostname.web1:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        hostname: web1
+        fqdn: web1.salt.eu.mcloud.chechetin.net
+        manage_etc_hosts: true
+
+  cloud_config.aggr.web1:
+      type: OS::Heat::MultipartMime
+      properties:
+        parts:
+          - config: { get_resource: cloud_config.hostname.web1 }
+          - config: { get_resource: cloud_config.common }
+          - config: { get_resource: cloud_config.salt.minion }
+          - config: { get_resource: cloud_config.salt.minion.restart }
+
+
+  network.port.web1:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: salt-network }
+      fixed_ips:
+        - subnet: { get_resource: salt-network-subnet }
+      security_groups:
+        - { get_resource: network.secgroup.web }
+
+  network.floating.map.web1:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_param: network.floating.web1 }
+      port_id: { get_resource: network.port.web1 }
+
   #
   # Tank
   #
@@ -416,12 +567,19 @@ resources:
     properties:
       name: SaltTank
       image: { get_param: image }
-      flavor: { get_param: flavor }
+      flavor: { get_param: flavor.default }
       key_name: { get_param: key }
       networks:
         - port: { get_resource: salt-tank-port }
       user_data_format: RAW
       user_data: { get_resource: cloud_config.aggr.tank }
+
+  volume.tank:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      volume_id: { get_param: volume.tank.id  }
+      instance_uuid: { get_resource: instance.tank }
+      mountpoint: /dev/vdb
 
   cloud_config.hostname.tank:
     type: OS::Heat::CloudConfig
@@ -448,13 +606,88 @@ resources:
       fixed_ips:
         - subnet: { get_resource: salt-network-subnet }
       security_groups:
-        - { get_resource: salt-front-security-group }
+        - { get_resource: salt-tank-security-group }
 
   salt-tank-association:
     type: OS::Neutron::FloatingIPAssociation
     properties:
-      floatingip_id: { get_param: salt_tank_floating_id }
+      floatingip_id: { get_param: network.floating.tank }
       port_id: { get_resource: salt-tank-port}
+
+  #
+  # Alert
+  #
+  network.secgroup.alert:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      # description: Add security group rules for server
+      name: salt.alert
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+
+        # HTTP & HTTPS
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 443
+          port_range_max: 443
+
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+
+  instance.alert:
+    type: OS::Nova::Server
+    depends_on: instance.master
+    properties:
+      name: SaltAlert
+      image: { get_param: image }
+      flavor: { get_param: flavor.default }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: network.port.alert }
+      user_data_format: RAW
+      user_data: { get_resource: cloud_config.aggr.alert }
+
+  cloud_config.hostname.alert:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        merge_how: 'dict(recurse_array,no_replace)+list(append)'
+        hostname: lb
+        fqdn: alert.salt.eu.mcloud.chechetin.net
+        manage_etc_hosts: true
+
+  cloud_config.aggr.alert:
+      type: OS::Heat::MultipartMime
+      properties:
+        parts:
+          - config: { get_resource: cloud_config.hostname.alert }
+          - config: { get_resource: cloud_config.common }
+          - config: { get_resource: cloud_config.salt.minion }
+          - config: { get_resource: cloud_config.salt.minion.restart }
+
+
+  network.port.alert:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: salt-network }
+      fixed_ips:
+        - subnet: { get_resource: salt-network-subnet }
+      security_groups:
+        - { get_resource: network.secgroup.alert }
+
+  network.floating.map.alert:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_param: network.floating.alert }
+      port_id: { get_resource: network.port.alert }
 
 # outputs:
 #   salt-master-private-ip:
